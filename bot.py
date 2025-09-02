@@ -21,6 +21,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# وظيفة للتحقق من وجود مستخدم سناب شات
+def check_snapchat_user(username):
+    try:
+        response = requests.get(
+            f"https://www.snapchat.com/add/{username}", 
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            },
+            timeout=10
+        )
+        return response.status_code == 200
+    except:
+        return False
+
 # وظيفة لاستخراج معلومات من قصص سناب شات
 def get_snapchat_stories(username):
     try:
@@ -31,11 +45,13 @@ def get_snapchat_stories(username):
             'Accept': 'application/json, text/plain, */*',
         }
         
-        # واجهات برمجة متعددة لسناب شات
+        # واجهات برمجة متعددة محدثة
         apis = [
             f"https://snapchat-downloader-api.herokuapp.com/stories/{username}",
             f"https://api.snapchat-downloader.com/stories/{username}",
             f"https://snapchat-downloader.com/api/stories/{username}",
+            f"https://api.snapsave.io/stories/{username}",
+            f"https://snap-downloader.com/api/stories/{username}",
         ]
         
         for api_url in apis:
@@ -46,12 +62,20 @@ def get_snapchat_stories(username):
                 if response.status_code == 200:
                     data = response.json()
                     
+                    # معالجة ردود مختلفة من واجهات البرمجة
                     if data and isinstance(data, list) and len(data) > 0:
                         logger.info(f"تم العثور على {len(data)} قصة")
                         return data
                     elif data and data.get('stories'):
-                        logger.info(f"تم العثور على {len(data.get('stories'))} قصة")
-                        return data.get('stories')
+                        stories = data.get('stories')
+                        if stories and len(stories) > 0:
+                            logger.info(f"تم العثور على {len(stories)} قصة")
+                            return stories
+                    elif data and data.get('data'):
+                        stories_data = data.get('data')
+                        if stories_data and len(stories_data) > 0:
+                            logger.info(f"تم العثور على {len(stories_data)} قصة")
+                            return stories_data
             
             except Exception as e:
                 logger.error(f"فشلت واجهة برمجة التطبيقات: {api_url}, الخطأ: {e}")
@@ -137,8 +161,10 @@ def handle_snapchat_username(message):
         # استخراج اسم المستخدم من الرسالة
         text = message.text.strip()
         
-        # إذا كان رابطًا، استخرج اسم المستخدم
-        if "snapchat.com/add/" in text:
+        # معالجة الأشكال المختلفة للأسماء
+        if "@" in text:
+            username = text.replace("@", "")  # إزالة @ إذا وجد
+        elif "snapchat.com/add/" in text:
             username_match = re.search(r'snapchat\.com/add/([a-zA-Z0-9._-]+)', text)
             if username_match:
                 username = username_match.group(1)
@@ -153,11 +179,18 @@ def handle_snapchat_username(message):
         # إظهار رسالة الانتظار
         wait_msg = bot.send_message(message.chat.id, f"⏳ جاري البحث عن قصص @{username}...")
         
+        # التحقق أولاً إذا كان المستخدم موجوداً
+        user_exists = check_snapchat_user(username)
+        if not user_exists:
+            bot.edit_message_text(f"❌ المستخدم @{username} غير موجود على سناب شات.", 
+                                 message.chat.id, wait_msg.message_id)
+            return
+        
         # جلب القصص
         stories = get_snapchat_stories(username)
         
         if not stories or len(stories) == 0:
-            bot.edit_message_text(f"❌ لم أتمكن من العثور على أي قصص للمستخدم @{username}. قد يكون الحساب خاصاً أو بدون قصص.", 
+            bot.edit_message_text(f"❌ لم أتمكن من العثور على أي قصص للمستخدم @{username}. قد يكون:\n• الحساب خاصاً\n• لا يوجد قصص حالياً\n• هناك قيود على الحساب", 
                                  message.chat.id, wait_msg.message_id)
             return
         
