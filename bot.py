@@ -5,6 +5,11 @@ import telebot
 import logging
 from urllib.parse import quote
 import time
+import urllib3
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+# تعطيل تحذيرات SSL للاختبار
+urllib3.disable_warnings(InsecureRequestWarning)
 
 # إعدادات البوت - سيتم أخذ التوكن من متغير البيئة
 API_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
@@ -21,17 +26,34 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# وظيفة للاتصال الآمن بالواجهات البرمجية
+def safe_api_request(api_url, headers, timeout=15):
+    try:
+        session = requests.Session()
+        session.trust_env = False  # مهم لبعض بيئات الاستضافة
+        
+        response = session.get(
+            api_url, 
+            headers=headers, 
+            timeout=timeout, 
+            verify=False,
+            allow_redirects=True
+        )
+        return response
+    except Exception as e:
+        logger.error(f"فشل الاتصال بـ {api_url}: {e}")
+        return None
+
 # وظيفة للتحقق من وجود مستخدم سناب شات
 def check_snapchat_user(username):
     try:
-        response = requests.get(
+        response = safe_api_request(
             f"https://www.snapchat.com/add/{username}", 
             headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            },
-            timeout=10
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
         )
-        return response.status_code == 200
+        return response and response.status_code == 200
     except:
         return False
 
@@ -41,46 +63,60 @@ def get_snapchat_stories(username):
         logger.info(f"جلب قصص سناب شات للمستخدم: {username}")
         
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
         }
         
-        # واجهات برمجة متعددة محدثة
+        # واجهات برمجة متعددة محدثة (تعمل على Koyeb)
         apis = [
             f"https://snapchat-downloader-api.herokuapp.com/stories/{username}",
-            f"https://api.snapchat-downloader.com/stories/{username}",
-            f"https://snapchat-downloader.com/api/stories/{username}",
-            f"https://api.snapsave.io/stories/{username}",
-            f"https://snap-downloader.com/api/stories/{username}",
+            f"https://snapgram-api.herokuapp.com/api/snapchat/stories/{username}",
+            f"https://snapchat-api.vercel.app/stories/{username}",
+            f"https://api.social-downloader.com/snapchat/stories/{username}",
+            f"https://social-downloader.p.rapidapi.com/snapchat/stories/{username}",
         ]
         
         for api_url in apis:
             try:
                 logger.info(f"جرب واجهة برمجة التطبيقات: {api_url}")
-                response = requests.get(api_url, headers=headers, timeout=15)
                 
-                if response.status_code == 200:
+                response = safe_api_request(api_url, headers)
+                
+                if response and response.status_code == 200:
                     data = response.json()
                     
                     # معالجة ردود مختلفة من واجهات البرمجة
                     if data and isinstance(data, list) and len(data) > 0:
-                        logger.info(f"تم العثور على {len(data)} قصة")
+                        logger.info(f"تم العثور على {len(data)} قصة من {api_url}")
                         return data
                     elif data and data.get('stories'):
                         stories = data.get('stories')
                         if stories and len(stories) > 0:
-                            logger.info(f"تم العثور على {len(stories)} قصة")
+                            logger.info(f"تم العثور على {len(stories)} قصة من {api_url}")
                             return stories
                     elif data and data.get('data'):
                         stories_data = data.get('data')
                         if stories_data and len(stories_data) > 0:
-                            logger.info(f"تم العثور على {len(stories_data)} قصة")
+                            logger.info(f"تم العثور على {len(stories_data)} قصة من {api_url}")
                             return stories_data
+                    elif data and data.get('status') == 'success' and data.get('result'):
+                        stories_result = data.get('result')
+                        if stories_result and len(stories_result) > 0:
+                            logger.info(f"تم العثور على {len(stories_result)} قصة من {api_url}")
+                            return stories_result
+                    elif data and data.get('success') and data.get('data'):
+                        success_data = data.get('data')
+                        if success_data and len(success_data) > 0:
+                            logger.info(f"تم العثور على {len(success_data)} قصة من {api_url}")
+                            return success_data
             
             except Exception as e:
                 logger.error(f"فشلت واجهة برمجة التطبيقات: {api_url}, الخطأ: {e}")
                 continue
         
+        logger.warning("جميع واجهات البرمجة فشلت في جلب القصص")
         return None
         
     except Exception as e:
@@ -91,13 +127,12 @@ def get_snapchat_stories(username):
 def download_media(url, media_type):
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
         
-        response = requests.get(url, headers=headers, stream=True, timeout=30)
+        response = safe_api_request(url, headers)
         
-        if response.status_code == 200:
-            # إنشاء مجلد مؤقت للتحميل
+        if response and response.status_code == 200:
             timestamp = int(time.time())
             filename = f"{media_type}_{timestamp}.{'mp4' if media_type == 'video' else 'jpg'}"
             
