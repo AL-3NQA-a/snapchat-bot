@@ -131,7 +131,7 @@ def check_status(message):
         bot.send_message(message.chat.id, f"❌ هناك مشكلة في البوت: {str(e)}")
 
 # معالجة أسماء مستخدمين سناب شات
-@bot.message_handler(regexp="(^[a-zA-Z0-9._-]{3,}$|snapchat\.com/add/)")
+@bot.message_handler(regexp=r"(^[a-zA-Z0-9._-]{3,}$|snapchat\.com/add/)")
 def handle_snapchat_username(message):
     try:
         # استخراج اسم المستخدم من الرسالة
@@ -169,10 +169,10 @@ def handle_snapchat_username(message):
         for i, story in enumerate(stories, 1):
             try:
                 media_url = story.get('url') or story.get('media_url') or story.get('video_url') or story.get('image_url')
-                media_type = 'video' if 'video' in media_url.lower() or '.mp4' in media_url.lower() else 'image'
-                
                 if not media_url:
                     continue
+                
+                media_type = 'video' if 'video' in media_url.lower() or '.mp4' in media_url.lower() else 'image'
                 
                 # إرسال حالة التحميل
                 progress_msg = bot.send_message(message.chat.id, f"📥 جاري تحميل القصة {i} من {len(stories)}...")
@@ -196,7 +196,10 @@ def handle_snapchat_username(message):
                     success_count += 1
                 
                 # حذف رسالة التقدم
-                bot.delete_message(message.chat.id, progress_msg.message_id)
+                try:
+                    bot.delete_message(message.chat.id, progress_msg.message_id)
+                except:
+                    pass
                 
                 # وقت راحة بين القصص
                 time.sleep(2)
@@ -211,7 +214,10 @@ def handle_snapchat_username(message):
         
     except Exception as e:
         logger.error(f"خطأ في معالجة طلب سناب شات: {e}")
-        bot.send_message(message.chat.id, "❌ حدث خطأ أثناء معالجة الطلب. حاول مرة أخرى.")
+        try:
+            bot.send_message(message.chat.id, "❌ حدث خطأ أثناء معالجة الطلب. حاول مرة أخرى.")
+        except:
+            pass
 
 # معالجة الرسائل الأخرى
 @bot.message_handler(func=lambda message: True)
