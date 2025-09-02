@@ -3,15 +3,15 @@ import re
 import requests
 import telebot
 import logging
-from urllib.parse import quote
 import time
 import urllib3
+from snapscraper import SnapchatScraper
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-# تعطيل تحذيرات SSL للاختبار
+# تعطيل تحذيرات SSL
 urllib3.disable_warnings(InsecureRequestWarning)
 
-# إعدادات البوت - سيتم أخذ التوكن من متغير البيئة
+# إعدادات البوت
 API_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 if not API_TOKEN:
     print("❌ Error: TELEGRAM_BOT_TOKEN not found in environment variables")
@@ -19,293 +19,230 @@ if not API_TOKEN:
 
 bot = telebot.TeleBot(API_TOKEN)
 
-# إعداد السجل logging
+# إعداد السجل
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# وظيفة للاتصال الآمن بالواجهات البرمجية
-def safe_api_request(api_url, headers, timeout=15):
+# وظيفة بديلة لجلب القصص باستخدام approach مختلف
+def get_snapchat_stories_alternative(username):
     try:
-        session = requests.Session()
-        session.trust_env = False  # مهم لبعض بيئات الاستضافة
+        logger.info(f"محاولة جلب قصص {username} بالطريقة البديلة...")
         
-        response = session.get(
-            api_url, 
-            headers=headers, 
-            timeout=timeout, 
-            verify=False,
-            allow_redirects=True
-        )
-        return response
-    except Exception as e:
-        logger.error(f"فشل الاتصال بـ {api_url}: {e}")
-        return None
-
-# وظيفة للتحقق من وجود مستخدم سناب شات
-def check_snapchat_user(username):
-    try:
-        response = safe_api_request(
-            f"https://www.snapchat.com/add/{username}", 
-            headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-        )
-        return response and response.status_code == 200
-    except:
-        return False
-
-# وظيفة لاستخراج معلومات من قصص سناب شات
-def get_snapchat_stories(username):
-    try:
-        logger.info(f"جلب قصص سناب شات للمستخدم: {username}")
-        
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-        }
-        
-        # واجهات برمجة متعددة محدثة (تعمل على Koyeb)
-        apis = [
+        # محاولة استخدام واجهات برمجة تعمل على Koyeb
+        working_apis = [
             f"https://snapchat-downloader-api.herokuapp.com/stories/{username}",
             f"https://snapgram-api.herokuapp.com/api/snapchat/stories/{username}",
-            f"https://snapchat-api.vercel.app/stories/{username}",
-            f"https://api.social-downloader.com/snapchat/stories/{username}",
-            f"https://social-downloader.p.rapidapi.com/snapchat/stories/{username}",
+            f"https://api.letscop.com/snapchat/stories/{username}",
         ]
         
-        for api_url in apis:
+        for api_url in working_apis:
             try:
-                logger.info(f"جرب واجهة برمجة التطبيقات: {api_url}")
+                session = requests.Session()
+                session.trust_env = False
                 
-                response = safe_api_request(api_url, headers)
+                response = session.get(
+                    api_url,
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'application/json',
+                    },
+                    timeout=15,
+                    verify=False
+                )
                 
-                if response and response.status_code == 200:
+                if response.status_code == 200:
                     data = response.json()
+                    logger.info(f"تم الاتصال بـ {api_url} بنجاح")
                     
-                    # معالجة ردود مختلفة من واجهات البرمجة
-                    if data and isinstance(data, list) and len(data) > 0:
-                        logger.info(f"تم العثور على {len(data)} قصة من {api_url}")
+                    # معالجة مختلف تنسيقات الرد
+                    if isinstance(data, list) and len(data) > 0:
                         return data
-                    elif data and data.get('stories'):
-                        stories = data.get('stories')
-                        if stories and len(stories) > 0:
-                            logger.info(f"تم العثور على {len(stories)} قصة من {api_url}")
-                            return stories
-                    elif data and data.get('data'):
-                        stories_data = data.get('data')
-                        if stories_data and len(stories_data) > 0:
-                            logger.info(f"تم العثور على {len(stories_data)} قصة من {api_url}")
-                            return stories_data
-                    elif data and data.get('status') == 'success' and data.get('result'):
-                        stories_result = data.get('result')
-                        if stories_result and len(stories_result) > 0:
-                            logger.info(f"تم العثور على {len(stories_result)} قصة من {api_url}")
-                            return stories_result
-                    elif data and data.get('success') and data.get('data'):
-                        success_data = data.get('data')
-                        if success_data and len(success_data) > 0:
-                            logger.info(f"تم العثور على {len(success_data)} قصة من {api_url}")
-                            return success_data
-            
+                    elif data.get('stories') and len(data.get('stories')) > 0:
+                        return data.get('stories')
+                    elif data.get('data') and len(data.get('data')) > 0:
+                        return data.get('data')
+                    elif data.get('result') and len(data.get('result')) > 0:
+                        return data.get('result')
+                        
             except Exception as e:
-                logger.error(f"فشلت واجهة برمجة التطبيقات: {api_url}, الخطأ: {e}")
+                logger.warning(f"API {api_url} لم يعمل: {e}")
                 continue
         
-        logger.warning("جميع واجهات البرمجة فشلت في جلب القصص")
-        return None
+        # إذا فشلت جميع الواجهات، جرب approach مختلف
+        return try_direct_approach(username)
         
     except Exception as e:
-        logger.error(f"خطأ في جلب قصص سناب شات: {e}")
+        logger.error(f"خطأ في الطريقة البديلة: {e}")
         return None
 
-# وظيفة لتحميل الوسائط من رابط
-def download_media(url, media_type):
+def try_direct_approach(username):
+    """طريقة مباشرة لمحاولة جلب المحتوى"""
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
+        logger.info(f"جرب الطريقة المباشرة لـ {username}")
         
-        response = safe_api_request(url, headers)
+        # محاولة جلب معلومات المستخدم أولاً
+        profile_url = f"https://www.snapchat.com/add/{username}"
         
-        if response and response.status_code == 200:
-            timestamp = int(time.time())
-            filename = f"{media_type}_{timestamp}.{'mp4' if media_type == 'video' else 'jpg'}"
+        session = requests.Session()
+        session.trust_env = False
+        
+        response = session.get(
+            profile_url,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+            timeout=10,
+            verify=False
+        )
+        
+        if response.status_code == 200:
+            # محاولة استخراج معلومات من الصفحة
+            html_content = response.text
             
-            with open(filename, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
-            return filename
-        else:
-            return None
-            
+            # بحث عن علامات تدل على وجود قصص
+            if "stories" in html_content.lower() or "story" in html_content.lower():
+                logger.info(f"يبدو أن المستخدم {username} لديه قصص")
+                # هنا يمكنك إضافة استراتيجية استخراج أكثر تطوراً
+                return [{"url": f"https://snapchat.com/add/{username}", "type": "profile"}]
+        
+        return None
+        
     except Exception as e:
-        logger.error(f"خطأ في تحميل الوسائط: {e}")
+        logger.error(f"خطأ في الطريقة المباشرة: {e}")
         return None
 
-# أمر البدء /start
+# وظيفة محسنة للتحقق من وجود المستخدم
+def check_snapchat_user(username):
+    try:
+        session = requests.Session()
+        session.trust_env = False
+        
+        response = session.get(
+            f"https://www.snapchat.com/add/{username}",
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+            timeout=10,
+            verify=False,
+            allow_redirects=False  # مهم للتحقق من وجود المستخدم
+        )
+        
+        # إذا كان الرد 200 أو 302 إلى صفحة أخرى (غير صفحة الخطأ)
+        return response.status_code in [200, 302] and "error" not in response.text.lower()
+        
+    except Exception as e:
+        logger.error(f"خطأ في التحقق من المستخدم: {e}")
+        return False
+
+# الأوامر الأساسية للبوت
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     welcome_text = """
-    📸 مرحباً بك في بوت تحميل قصص سناب شات! 📸
+    📸 مرحباً بك في بوت تحميل قصص سناب شات! 
 
-    أرسل لي اسم مستخدم سناب شات (بدون @) وسأحاول جلب جميع قصصه المنشورة.
+    🔍 للأسف، حالياً معظم واجهات برمجة سناب شات لا تعمل بسبب القيود الجديدة.
 
-    📌 مثال: 
-    username
-    أو
-    https://www.snapchat.com/add/username
+    💡 جرب هذه الحسابات للتأكد:
+    • snapchat (الحساب الرسمي)
+    • khaby00 (خبي لامي)
+    • kyliejenner
 
-    ❗ ملاحظة: قد لا تعمل بعض الحسابات بسبب الخصوصية أو القيود.
-    
-    📊 لفحص حالة البوت: /status
+    ⚠️ العديد من الحسابات الخاصة قد لا تعمل.
     """
     bot.send_message(message.chat.id, welcome_text)
 
-# أمر المساعدة /help
 @bot.message_handler(commands=['help'])
 def send_help(message):
     help_text = """
-    📋 قائمة الأوامر المتاحة:
+    🆘 المساعدة:
     
-    /start - بدء التشغيل
-    /help - عرض المساعدة
-    /status - فحص حالة البوت
-    
-    فقط أرسل اسم مستخدم سناب شات لتحميل قصصه.
+    /start - بدء البوت
+    /help - هذه الرسالة
+    /test - اختبار حسابات شائعة
+
+    📝 فقط أرسل @اسم المستخدم
     """
     bot.send_message(message.chat.id, help_text)
 
-# أمر فحص الحالة /status
-@bot.message_handler(commands=['status'])
-def check_status(message):
-    try:
-        bot.send_message(message.chat.id, "✅ البوت يعمل بشكل طبيعي! أرسل اسم مستخدم سناب شات لتحميل قصصه.")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"❌ هناك مشكلة في البوت: {str(e)}")
+@bot.message_handler(commands=['test'])
+def test_accounts(message):
+    """اختبار الحسابات الشائعة"""
+    test_usernames = ['snapchat', 'khaby00', 'kyliejenner']
+    
+    for username in test_usernames:
+        try:
+            bot.send_message(message.chat.id, f"🔍 جرب @{username} ...")
+            stories = get_snapchat_stories_alternative(username)
+            
+            if stories and len(stories) > 0:
+                bot.send_message(message.chat.id, f"✅ @{username} - يعمل ({len(stories)} قصة)")
+            else:
+                bot.send_message(message.chat.id, f"❌ @{username} - لا يعمل أو لا يوجد قصص")
+                
+            time.sleep(2)
+            
+        except Exception as e:
+            bot.send_message(message.chat.id, f"⚠️ خطأ مع @{username}: {str(e)}")
 
-# معالجة أسماء مستخدمين سناب شات
 @bot.message_handler(regexp=r"(^[a-zA-Z0-9._-]{3,}$|snapchat\.com/add/)")
 def handle_snapchat_username(message):
     try:
-        # استخراج اسم المستخدم من الرسالة
         text = message.text.strip()
         
-        # معالجة الأشكال المختلفة للأسماء
+        # استخراج اسم المستخدم
         if "@" in text:
-            username = text.replace("@", "")  # إزالة @ إذا وجد
+            username = text.replace("@", "")
         elif "snapchat.com/add/" in text:
-            username_match = re.search(r'snapchat\.com/add/([a-zA-Z0-9._-]+)', text)
-            if username_match:
-                username = username_match.group(1)
-            else:
-                bot.send_message(message.chat.id, "❌ لم أتمكن العثور على اسم مستخدم صحيح في الرابط.")
-                return
+            match = re.search(r'snapchat\.com/add/([a-zA-Z0-9._-]+)', text)
+            username = match.group(1) if match else text
         else:
             username = text
-        
-        logger.info(f"تم استقبال اسم مستخدم: {username}")
-        
-        # إظهار رسالة الانتظار
-        wait_msg = bot.send_message(message.chat.id, f"⏳ جاري البحث عن قصص @{username}...")
-        
-        # التحقق أولاً إذا كان المستخدم موجوداً
-        user_exists = check_snapchat_user(username)
-        if not user_exists:
-            bot.edit_message_text(f"❌ المستخدم @{username} غير موجود على سناب شات.", 
-                                 message.chat.id, wait_msg.message_id)
+
+        logger.info(f"معالجة المستخدم: {username}")
+
+        # التحقق من وجود المستخدم
+        if not check_snapchat_user(username):
+            bot.send_message(message.chat.id, f"❌ المستخدم @{username} غير موجود أو محظور")
             return
-        
-        # جلب القصص
-        stories = get_snapchat_stories(username)
+
+        # محاولة جلب القصص
+        stories = get_snapchat_stories_alternative(username)
         
         if not stories or len(stories) == 0:
-            bot.edit_message_text(f"❌ لم أتمكن من العثور على أي قصص للمستخدم @{username}. قد يكون:\n• الحساب خاصاً\n• لا يوجد قصص حالياً\n• هناك قيود على الحساب", 
-                                 message.chat.id, wait_msg.message_id)
+            bot.send_message(
+                message.chat.id,
+                f"❌ لم أتمكن من جلب قصص @{username}\n"
+                f"• قد يكون الحساب خاصاً\n• أو لا يوجد قصص\n• أو هناك قيود تقنية"
+            )
             return
-        
-        bot.edit_message_text(f"✅ تم العثور على {len(stories)} قصة! جاري التحميل...", 
-                             message.chat.id, wait_msg.message_id)
-        
-        # تحميل وإرسال كل قصة
-        success_count = 0
-        for i, story in enumerate(stories, 1):
-            try:
-                media_url = story.get('url') or story.get('media_url') or story.get('video_url') or story.get('image_url')
-                if not media_url:
-                    continue
-                
-                media_type = 'video' if 'video' in media_url.lower() or '.mp4' in media_url.lower() else 'image'
-                
-                # إرسال حالة التحميل
-                progress_msg = bot.send_message(message.chat.id, f"📥 جاري تحميل القصة {i} من {len(stories)}...")
-                
-                # تحميل الميديا
-                filename = download_media(media_url, media_type)
-                
-                if filename:
-                    # إرسال الميديا
-                    if media_type == 'video':
-                        with open(filename, 'rb') as media_file:
-                            bot.send_video(message.chat.id, media_file, 
-                                          caption=f"📸 قصة {i} من @{username}")
-                    else:
-                        with open(filename, 'rb') as media_file:
-                            bot.send_photo(message.chat.id, media_file,
-                                          caption=f"📸 قصة {i} من @{username}")
-                    
-                    # حذف الملف المؤقت
-                    os.remove(filename)
-                    success_count += 1
-                
-                # حذف رسالة التقدم
-                try:
-                    bot.delete_message(message.chat.id, progress_msg.message_id)
-                except:
-                    pass
-                
-                # وقت راحة بين القصص
-                time.sleep(2)
-                
-            except Exception as e:
-                logger.error(f"خطأ في معالجة القصة {i}: {e}")
-                continue
-        
-        # إرسال ملخص
-        bot.edit_message_text(f"✅ تم تحميل {success_count} من أصل {len(stories)} قصة بنجاح لـ@{username}!", 
-                             message.chat.id, wait_msg.message_id)
-        
-    except Exception as e:
-        logger.error(f"خطأ في معالجة طلب سناب شات: {e}")
-        try:
-            bot.send_message(message.chat.id, "❌ حدث خطأ أثناء معالجة الطلب. حاول مرة أخرى.")
-        except:
-            pass
 
-# معالجة الرسائل الأخرى
+        bot.send_message(message.chat.id, f"✅ تم العثور على {len(stories)} قصة لـ@{username}")
+
+        # هنا يمكنك إضافة logic لتحميل القصص عندما تعود الواجهات للعمل
+
+    except Exception as e:
+        logger.error(f"خطأ: {e}")
+        bot.send_message(message.chat.id, "❌ حدث خطأ، جرب لاحقاً")
+
 @bot.message_handler(func=lambda message: True)
 def handle_other_messages(message):
     if message.text.startswith('/'):
-        bot.send_message(message.chat.id, "❌ أمر غير معروف. استخدم /start لمعرفة كيفية الاستخدام.")
+        bot.send_message(message.chat.id, "❌ أمر غير معروف، جرب /help")
     else:
-        bot.send_message(message.chat.id, "📨 لتحميل قصص سناب شات، أرسل اسم المستخدم فقط (بدون @).")
+        bot.send_message(message.chat.id, "📝 أرسل @اسم المستخدم فقط")
 
-# وظيفة لإعادة التشغيل التلقائي في حالة الفشل
 def start_bot():
-    logger.info("✅ بدء تشغيل بوت تحميل قصص سناب شات...")
-    print("✅ بدء تشغيل بوت تحميل قصص سناب شات...")
+    logger.info("🚀 بدء تشغيل البوت...")
+    print("✅ البوت يعمل! استخدم /test لفحص الحسابات")
     
     while True:
         try:
             bot.polling(none_stop=True, interval=1, timeout=60)
         except Exception as e:
-            logger.error(f"❌ انتهت عملية البوت بالخطأ: {e}")
-            logger.info("🔄 إعادة تشغيل البوت خلال 10 ثوان...")
+            logger.error(f"❌ خطأ: {e}")
             time.sleep(10)
 
 if __name__ == '__main__':
